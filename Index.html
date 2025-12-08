@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, Brain, Volume2, ArrowRight, Dices, 
-  Trophy, User, Star, AlertCircle, Coins, Crown, Users
+  Trophy, User, Star, AlertCircle, Coins, Crown, Users, Swords, ShieldAlert, ShieldCheck
 } from 'lucide-react';
 
 // --- 數據源 (第10-40項) ---
@@ -39,10 +39,10 @@ const FULL_DATA = [
   { id: 40, word: "五體投地", meaning: "引申形容對別人十分佩服。" }
 ];
 
-const BOARD_SIZE = 20; 
-const TARGET_IDIOMS_COUNT = 10;
-const INITIAL_SCORE = 1500;
-const RENT_MULTIPLIER = 0.5; // 過路費是地價的 50%
+// 擴大棋盤以容納20個成語
+const BOARD_SIZE = 28; // 8x8 外圈
+const TARGET_IDIOMS_COUNT = 20;
+const INITIAL_SCORE = 2000; // 增加初始資金
 
 // --- 語音功能 ---
 const speak = (text) => {
@@ -58,7 +58,7 @@ const speak = (text) => {
   }
 };
 
-export default function IdiomMonopolyPVP() {
+export default function IdiomMonopolyDuel() {
   const [gameState, setGameState] = useState('menu'); 
   const [sessionIdioms, setSessionIdioms] = useState([]);
   const [boardTiles, setBoardTiles] = useState([]);
@@ -67,32 +67,33 @@ export default function IdiomMonopolyPVP() {
   const [studyIndex, setStudyIndex] = useState(0);
 
   // 雙人遊戲狀態
-  const [turn, setTurn] = useState(1); // 1 = Player 1 (Red), 2 = Player 2 (Blue)
+  const [turn, setTurn] = useState(1); 
   const [players, setPlayers] = useState({
-    1: { pos: 0, score: INITIAL_SCORE, name: '玩家 1', color: 'bg-red-500', bg: 'bg-red-50', border: 'border-red-500' },
-    2: { pos: 0, score: INITIAL_SCORE, name: '玩家 2', color: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-500' }
+    1: { pos: 0, score: INITIAL_SCORE, name: '玩家 1', color: 'bg-red-500', bg: 'bg-red-50', border: 'border-red-500', text: 'text-red-700' },
+    2: { pos: 0, score: INITIAL_SCORE, name: '玩家 2', color: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-500', text: 'text-blue-700' }
   });
   
   const [diceValue, setDiceValue] = useState(1);
   const [isMoving, setIsMoving] = useState(false);
-  const [modalContent, setModalContent] = useState(null); 
+  const [modalContent, setModalContent] = useState(null); // question, duel, event, correct, wrong, result
   const [currentEvent, setCurrentEvent] = useState(null);
-  const [gameLog, setGameLog] = useState(["遊戲開始！請玩家 1 擲骰子。"]);
+  const [gameLog, setGameLog] = useState(["遊戲開始！"]);
 
-  // 添加日誌
   const addLog = (msg) => setGameLog(prev => [msg, ...prev].slice(0, 3));
 
   // 初始化
   const initGame = () => {
+    // 1. 隨機選 20 個成語
     const shuffled = [...FULL_DATA].sort(() => 0.5 - Math.random());
     const selected = shuffled.slice(0, TARGET_IDIOMS_COUNT);
     setSessionIdioms(selected);
     
-    // 生成地圖
+    // 生成地圖 (28格)
     const newTiles = Array(BOARD_SIZE).fill(null).map((_, i) => ({ id: i, type: 'empty' }));
     newTiles[0] = { id: 0, type: 'start', label: '起點' };
     
-    const availableSlots = Array.from({length: 19}, (_, i) => i + 1).sort(() => 0.5 - Math.random());
+    // 剩下的27格中，20格放成語，7格放特殊事件
+    const availableSlots = Array.from({length: 27}, (_, i) => i + 1).sort(() => 0.5 - Math.random());
     
     selected.forEach((idiom, idx) => {
       const slot = availableSlots[idx];
@@ -100,9 +101,9 @@ export default function IdiomMonopolyPVP() {
         id: slot, 
         type: 'idiom', 
         data: idiom,
-        price: 400, // 地價
-        rent: 200,  // 過路費
-        owner: null // 1 or 2 or null
+        price: 300, 
+        rent: 150,  
+        owner: null
       };
     });
 
@@ -118,11 +119,11 @@ export default function IdiomMonopolyPVP() {
     setBoardTiles(newTiles);
     setStudyIndex(0);
     setPlayers({
-      1: { pos: 0, score: INITIAL_SCORE, name: '玩家 1', color: 'bg-red-500', bg: 'bg-red-50', border: 'border-red-500' },
-      2: { pos: 0, score: INITIAL_SCORE, name: '玩家 2', color: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-500' }
+      1: { pos: 0, score: INITIAL_SCORE, name: '玩家 1', color: 'bg-red-500', bg: 'bg-red-50', border: 'border-red-500', text: 'text-red-700' },
+      2: { pos: 0, score: INITIAL_SCORE, name: '玩家 2', color: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-500', text: 'text-blue-700' }
     });
     setTurn(1);
-    setGameLog(["遊戲開始！請先進行溫習。"]);
+    setGameLog(["準備開始，請先溫習！"]);
     setGameState('study');
   };
 
@@ -136,18 +137,16 @@ export default function IdiomMonopolyPVP() {
 
     let currentPos = players[turn].pos;
     for (let i = 0; i < roll; i++) {
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 200));
       currentPos = (currentPos + 1) % BOARD_SIZE;
       
-      // 更新位置
       setPlayers(prev => ({
         ...prev,
         [turn]: { ...prev[turn], pos: currentPos }
       }));
 
-      // 經過起點
       if (currentPos === 0) {
-        addLog(`${players[turn].name} 經過起點，獎勵 300 分`);
+        addLog(`${players[turn].name} 經過起點，+300分`);
         setPlayers(prev => ({
           ...prev,
           [turn]: { ...prev[turn], score: prev[turn].score + 300, pos: currentPos }
@@ -159,42 +158,34 @@ export default function IdiomMonopolyPVP() {
     handleTileEvent(currentPos);
   };
 
+  // 生成問題選項 (每次調用都重新隨機)
+  const generateOptions = (correctData) => {
+    const distractors = sessionIdioms
+      .filter(i => i.id !== correctData.id)
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3);
+    return [...distractors, correctData].sort(() => 0.5 - Math.random());
+  };
+
   // 事件處理
   const handleTileEvent = (pos) => {
     const tile = boardTiles[pos];
     const currentPlayer = players[turn];
-    const opponent = turn === 1 ? 2 : 1;
 
     if (tile.type === 'idiom') {
       if (tile.owner === null) {
-        // 無主地：答題購買
-        const correctAnswer = tile.data;
-        const distractors = sessionIdioms
-          .filter(i => i.id !== correctAnswer.id)
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 3);
-        const options = [...distractors, correctAnswer].sort(() => 0.5 - Math.random());
-        
-        setCurrentEvent({ ...tile, options, correctId: correctAnswer.id });
+        // --- 買地模式 ---
+        const options = generateOptions(tile.data);
+        setCurrentEvent({ ...tile, options, mode: 'buy' });
         setModalContent('question');
 
       } else if (tile.owner !== turn) {
-        // 對手的地：付過路費
-        const rent = tile.rent;
-        addLog(`${currentPlayer.name} 踩中對手地盤！支付 ${rent} 分`);
-        
-        setPlayers(prev => ({
-          ...prev,
-          [turn]: { ...prev[turn], score: Math.max(0, prev[turn].score - rent) },
-          [opponent]: { ...prev[opponent], score: prev[opponent].score + rent }
-        }));
-        
-        setCurrentEvent({ ...tile, rent });
-        setModalContent('pay_rent');
-
+        // --- 對決模式 (踩中對手) ---
+        // 先顯示警告，然後進入問題
+        setCurrentEvent({ ...tile, mode: 'duel' });
+        setModalContent('duel_alert');
       } else {
-        // 自己的地：幸運
-        addLog(`${currentPlayer.name} 回到自己地盤，休息一下。`);
+        addLog(`回到自己地盤，安全！`);
         switchTurn();
       }
 
@@ -202,46 +193,76 @@ export default function IdiomMonopolyPVP() {
       const isChance = tile.type === 'chance';
       const points = isChance ? 200 : -100;
       const texts = isChance 
-        ? ["偶遇名師指點，學業大進！", "在圖書館撿到筆記。", "同學請你食魚蛋。"]
-        : ["上堂恰眼訓，被老師發現。", "忘記帶書本。", "默書不合格。"];
+        ? ["撿到成語秘籍！", "老師稱讚你！", "幸運中獎！"]
+        : ["上課發白日夢。", "忘記帶功課。", "測驗不合格。"];
       
       const text = texts[Math.floor(Math.random() * texts.length)];
-      
       setCurrentEvent({ title: isChance ? "機會" : "命運", text, points });
       setModalContent('event');
     } else {
-      // 起點或其他
       switchTurn();
     }
   };
 
+  const startDuelQuestion = () => {
+    const tile = currentEvent;
+    const options = generateOptions(tile.data);
+    setCurrentEvent({ ...tile, options, mode: 'duel' });
+    setModalContent('question');
+  };
+
   const handleAnswer = (selectedId) => {
-    if (selectedId === currentEvent.correctId) {
-      // 答對：獲得地皮 + 少量分數
-      const bonus = 100;
-      addLog(`${players[turn].name} 佔領成功！獲得地皮及 ${bonus} 分`);
-      
-      // 更新地皮擁有者
-      setBoardTiles(prev => prev.map(t => 
-        t.id === currentEvent.id ? { ...t, owner: turn } : t
-      ));
+    const isCorrect = selectedId === currentEvent.data.id;
+    
+    if (currentEvent.mode === 'buy') {
+      // 買地邏輯
+      if (isCorrect) {
+        addLog(`${players[turn].name} 買地成功！`);
+        setBoardTiles(prev => prev.map(t => 
+          t.id === currentEvent.id ? { ...t, owner: turn } : t
+        ));
+        setPlayers(prev => ({
+          ...prev,
+          [turn]: { ...prev[turn], score: prev[turn].score + 100 }
+        }));
+        speak("答對了！");
+        setModalContent('correct_buy');
+      } else {
+        addLog(`${players[turn].name} 買地失敗。`);
+        setModalContent('wrong_buy');
+      }
+    } else if (currentEvent.mode === 'duel') {
+      // 對決邏輯
+      const opponent = turn === 1 ? 2 : 1;
+      const baseRent = currentEvent.rent;
+      let actualRent = 0;
+      let resultType = '';
+
+      if (isCorrect) {
+        // 答對：減半
+        actualRent = Math.floor(baseRent / 2);
+        resultType = 'duel_win';
+        speak("好野！守住銀包！");
+        addLog(`答對！過路費減半為 ${actualRent}`);
+      } else {
+        // 答錯：雙倍
+        actualRent = baseRent * 2;
+        resultType = 'duel_lose';
+        addLog(`答錯！過路費雙倍罰 ${actualRent}`);
+      }
 
       setPlayers(prev => ({
         ...prev,
-        [turn]: { ...prev[turn], score: prev[turn].score + bonus }
+        [turn]: { ...prev[turn], score: Math.max(0, prev[turn].score - actualRent) },
+        [opponent]: { ...prev[opponent], score: prev[opponent].score + actualRent }
       }));
 
-      speak("答對了！" + currentEvent.data.word);
-      setModalContent('correct');
-    } else {
-      // 答錯
-      addLog(`${players[turn].name} 挑戰失敗，錯失良機。`);
-      setModalContent('wrong');
+      setCurrentEvent(prev => ({ ...prev, actualRent }));
+      setModalContent(resultType);
     }
   };
 
   const switchTurn = () => {
-    // 檢查是否所有地都有人買了
     const allOwned = boardTiles.filter(t => t.type === 'idiom').every(t => t.owner !== null);
     if (allOwned) {
       setGameState('finished');
@@ -250,44 +271,44 @@ export default function IdiomMonopolyPVP() {
     }
   };
 
-  // 計算總資產
   const calculateTotal = (playerId) => {
     const cash = players[playerId].score;
     const propertyValue = boardTiles
-      .filter(t => t.owner === playerId)
+      .filter(t => t.owner === parseInt(playerId))
       .reduce((sum, t) => sum + t.price, 0);
     return cash + propertyValue;
   };
 
-  // --- UI Components ---
+  // --- UI 組件 ---
 
   const MenuScreen = () => (
-    <div className="flex flex-col items-center justify-center min-h-[500px] p-8 space-y-8 bg-white rounded-xl shadow-2xl animate-fade-in border-4 border-indigo-100 text-center">
+    <div className="flex flex-col items-center justify-center min-h-[500px] p-8 space-y-8 bg-white rounded-xl shadow-2xl border-4 border-indigo-100 text-center animate-fade-in">
       <div className="flex gap-4 mb-4">
-        <div className="bg-red-500 p-4 rounded-full shadow-lg text-white"><User size={40} /></div>
-        <div className="bg-blue-500 p-4 rounded-full shadow-lg text-white"><User size={40} /></div>
+        <Swords size={64} className="text-indigo-600" />
       </div>
       
       <div>
-        <h1 className="text-4xl font-black text-indigo-900 tracking-tight mb-2">成語大富翁：雙人對戰</h1>
-        <p className="text-xl text-gray-500 font-medium">誰才是成語大亨？二人同機，即時對決！</p>
+        <h1 className="text-4xl font-black text-indigo-900 tracking-tight mb-2">成語大富翁：終極對決</h1>
+        <p className="text-xl text-gray-500 font-medium">20塊地皮・雙倍懲罰・智慧激戰</p>
       </div>
 
-      <div className="bg-gray-50 p-6 rounded-xl text-left max-w-md w-full space-y-3">
-        <h3 className="font-bold text-gray-800 flex items-center gap-2"><Star size={18} className="text-yellow-500"/> 對戰規則：</h3>
-        <ul className="list-disc list-inside text-sm text-gray-600 space-y-2">
-          <li>雙人輪流擲骰子移動。</li>
-          <li>走到無人地：<span className="font-bold text-indigo-600">答對題目</span>即可免費佔領！</li>
-          <li>走到對手地：必須<span className="font-bold text-red-600">支付過路費</span>！</li>
-          <li>所有地皮被佔領後，資產（分數+地價）最高者勝。</li>
+      <div className="bg-orange-50 p-6 rounded-xl text-left max-w-md w-full border border-orange-200">
+        <h3 className="font-bold text-orange-800 flex items-center gap-2 mb-3">
+          <ShieldAlert size={20}/> 殘酷規則：
+        </h3>
+        <ul className="list-disc list-inside text-sm text-gray-700 space-y-2 font-medium">
+          <li>踩中對手地盤觸發<span className="text-red-600 font-bold">「守衛戰」</span>。</li>
+          <li>挑戰問題答案位置<span className="text-indigo-600 font-bold">隨機出現</span>。</li>
+          <li className="flex items-center gap-2 text-green-700"><ShieldCheck size={16}/> 答對：過路費 <span className="font-bold">減半 (50%)</span></li>
+          <li className="flex items-center gap-2 text-red-700"><ShieldAlert size={16}/> 答錯：過路費 <span className="font-bold">雙倍 (200%)</span></li>
         </ul>
       </div>
 
       <button 
         onClick={initGame}
-        className="w-full max-w-xs px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xl shadow-xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+        className="w-full max-w-xs px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-bold text-xl shadow-xl hover:scale-105 transition-transform flex items-center justify-center gap-2"
       >
-        <Users /> 開始對戰
+        <Swords /> 開始對戰
       </button>
     </div>
   );
@@ -297,12 +318,11 @@ export default function IdiomMonopolyPVP() {
     return (
       <div className="flex flex-col h-full bg-white rounded-xl shadow-xl overflow-hidden max-w-2xl mx-auto">
         <div className="bg-indigo-600 text-white p-4 flex justify-between items-center">
-          <span className="font-bold text-lg flex items-center gap-2"><BookOpen/> 賽前準備 (兩位請一起看)</span>
-          <span className="bg-indigo-800 px-3 py-1 rounded-full text-xs">{studyIndex + 1} / {TARGET_IDIOMS_COUNT}</span>
+          <span className="font-bold flex items-center gap-2"><BookOpen/> 戰前特訓 (共20題)</span>
+          <span className="bg-indigo-800 px-3 py-1 rounded-full text-xs font-mono">{studyIndex + 1} / {TARGET_IDIOMS_COUNT}</span>
         </div>
         
         <div className="flex-1 p-8 flex flex-col items-center justify-center text-center space-y-6">
-          <div className="text-sm text-gray-400">請兩位玩家一起記住這個成語</div>
           <div 
             className="group relative cursor-pointer"
             onClick={() => speak(item.word)}
@@ -341,7 +361,7 @@ export default function IdiomMonopolyPVP() {
               onClick={() => setGameState('game')}
               className="px-8 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 transition shadow-lg animate-bounce flex items-center gap-2"
             >
-              準備好了！開始比賽 <Dices size={18} />
+              進入戰場 <Swords size={18} />
             </button>
           )}
         </div>
@@ -349,98 +369,68 @@ export default function IdiomMonopolyPVP() {
     );
   };
 
-  const PlayerStats = ({ pid }) => {
-    const p = players[pid];
-    const isTurn = turn === parseInt(pid);
-    const properties = boardTiles.filter(t => t.owner === parseInt(pid)).length;
-    
-    return (
-      <div className={`
-        flex-1 p-3 rounded-xl border-2 transition-all duration-300
-        ${p.bg} ${p.border} ${isTurn ? 'ring-4 ring-offset-2 ring-yellow-400 shadow-lg scale-105 z-10' : 'opacity-80 scale-95'}
-      `}>
-        <div className="flex items-center justify-between mb-2">
-          <span className={`font-bold ${pid === '1' ? 'text-red-700' : 'text-blue-700'} flex items-center gap-2`}>
-            <User size={18} className={p.color + " text-white rounded-full p-0.5"}/>
-            {p.name}
-          </span>
-          {isTurn && <span className="text-xs font-bold bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full animate-pulse">我的回合</span>}
-        </div>
-        <div className="flex justify-between items-end">
-          <div>
-            <div className="text-xs text-gray-500">分數</div>
-            <div className="text-2xl font-black text-gray-800">${p.score}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-xs text-gray-500">地皮</div>
-            <div className="font-bold text-gray-700">{properties} 塊</div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderBoard = () => {
+  const RenderBoard = () => {
+    // 8x8 Grid Mapping
+    // 0-7: Top Row (Left to Right)
+    // 8-14: Right Col (Top to Bottom)
+    // 15-21: Bottom Row (Right to Left)
+    // 22-27: Left Col (Bottom to Top)
     const getGridPos = (index) => {
-      if (index <= 5) return { row: 1, col: index + 1 };
-      if (index <= 9) return { row: index - 4, col: 6 };
-      if (index <= 15) return { row: 6, col: 6 - (index - 10) };
-      return { row: 6 - (index - 15), col: 1 };
+      if (index <= 7) return { row: 1, col: index + 1 };
+      if (index <= 14) return { row: index - 6, col: 8 };
+      if (index <= 21) return { row: 8, col: 8 - (index - 14) };
+      return { row: 8 - (index - 21), col: 1 };
     };
 
     return (
-      <div className="grid grid-cols-6 grid-rows-6 gap-1 w-full max-w-2xl aspect-square mx-auto bg-slate-100 p-2 rounded-xl shadow-inner border-4 border-slate-200 relative">
-        {/* 中心區域 */}
-        <div className="col-start-2 col-end-6 row-start-2 row-end-6 bg-white rounded-xl shadow-sm flex flex-col p-4 z-10 overflow-hidden">
-          {/* 玩家狀態欄 */}
-          <div className="flex gap-2 mb-4 w-full">
-            <PlayerStats pid="1" />
-            <PlayerStats pid="2" />
-          </div>
-
-          {/* 遊戲訊息 */}
-          <div className="bg-gray-50 rounded-lg p-2 h-16 overflow-hidden mb-4 text-xs md:text-sm text-gray-600 border border-gray-100">
-            {gameLog.map((log, i) => (
-              <div key={i} className={`truncate ${i === 0 ? 'font-bold text-gray-800' : 'opacity-60'}`}>
-                {i === 0 && '>'} {log}
+      <div className="grid grid-cols-8 grid-rows-8 gap-1 w-full max-w-3xl aspect-square mx-auto bg-slate-100 p-2 rounded-xl shadow-inner border-4 border-slate-200 relative select-none">
+        
+        {/* Center Hub */}
+        <div className="col-start-2 col-end-8 row-start-2 row-end-8 bg-white rounded-xl shadow-sm flex flex-col p-4 z-10 overflow-hidden">
+          {/* Stats */}
+          <div className="flex gap-2 mb-4">
+            {[1, 2].map(pid => (
+              <div key={pid} className={`flex-1 p-3 rounded-xl border-2 transition-all ${players[pid].bg} ${players[pid].border} ${turn === pid ? 'ring-4 ring-yellow-400 scale-105 shadow-md' : 'opacity-80'}`}>
+                <div className={`font-bold ${players[pid].text} flex justify-between`}>
+                  <span>{players[pid].name}</span>
+                  {turn === pid && <span className="text-xs bg-yellow-400 text-yellow-900 px-1 rounded">回合</span>}
+                </div>
+                <div className="text-2xl font-black text-gray-800">${players[pid].score}</div>
+                <div className="text-xs text-gray-500">地皮: {boardTiles.filter(t=>t.owner===pid).length}</div>
               </div>
             ))}
           </div>
+
+          {/* Log */}
+          <div className="bg-gray-50 rounded-lg p-2 h-20 overflow-y-auto mb-4 text-xs text-gray-600 border border-gray-100 font-mono">
+            {gameLog.map((log, i) => <div key={i} className={i===0?'font-bold text-black':''}>{i===0?'> ':''}{log}</div>)}
+          </div>
           
-          {/* 骰子按鈕 */}
-          <div className="flex-1 flex flex-col items-center justify-center">
+          {/* Dice */}
+          <div className="flex-1 flex items-center justify-center">
              <button 
               onClick={rollDice}
               disabled={isMoving || modalContent !== null}
               className={`
-                relative w-24 h-24 md:w-32 md:h-32 flex items-center justify-center rounded-2xl shadow-xl transition-all
+                w-24 h-24 rounded-2xl shadow-xl flex flex-col items-center justify-center text-white font-bold transition-all
                 ${turn === 1 ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'}
-                ${(isMoving || modalContent) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 cursor-pointer'}
+                ${(isMoving || modalContent) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110 active:scale-95'}
               `}
             >
-                {isMoving ? (
-                   <div className="animate-spin text-4xl text-white">🎲</div>
-                ) : (
-                  <div className="text-white text-center">
-                    <Dices size={40} className="mx-auto mb-1" />
-                    <span className="font-bold block text-sm">{players[turn].name}<br/>擲骰子</span>
-                  </div>
-                )}
+              {isMoving ? <div className="animate-spin text-3xl">🎲</div> : <><Dices size={32}/><span className="mt-1">擲骰子</span></>}
              </button>
-             {diceValue > 0 && !isMoving && <div className="mt-2 font-bold text-gray-400">點數: {diceValue}</div>}
+             {diceValue > 0 && !isMoving && <div className="ml-4 font-bold text-gray-400 text-xl">點數: {diceValue}</div>}
           </div>
         </div>
 
-        {/* 格子 */}
+        {/* Tiles */}
         {boardTiles.map((tile, i) => {
           const pos = getGridPos(i);
           const p1Here = players[1].pos === i;
           const p2Here = players[2].pos === i;
           
-          // 格子樣式
-          let borderClass = "border-gray-300";
           let bgClass = "bg-white";
-          
+          let borderClass = "border-gray-200";
           if (tile.type === 'start') bgClass = "bg-yellow-100";
           else if (tile.type === 'chance') bgClass = "bg-orange-100";
           else if (tile.type === 'fate') bgClass = "bg-purple-100";
@@ -451,30 +441,29 @@ export default function IdiomMonopolyPVP() {
             <div 
               key={i}
               className={`
-                relative flex flex-col items-center justify-center text-center p-0.5 md:p-1 rounded-md border-2 text-[9px] md:text-xs font-bold transition-all
+                relative flex flex-col items-center justify-center text-center rounded border text-[8px] md:text-[10px] font-bold overflow-hidden transition-colors
                 ${bgClass} ${borderClass}
               `}
               style={{ gridRow: pos.row, gridColumn: pos.col }}
             >
               {tile.type === 'idiom' ? (
                 <>
-                  <span className={tile.owner ? (tile.owner === 1 ? 'text-red-800' : 'text-blue-800') : 'text-gray-600'}>
+                  <span className={`leading-tight ${tile.owner ? (tile.owner === 1 ? 'text-red-800' : 'text-blue-800') : 'text-gray-600'}`}>
                     {tile.data.word}
                   </span>
                   {tile.owner && (
-                     <div className={`absolute top-0 right-0 p-0.5 text-[8px] text-white rounded-bl ${tile.owner === 1 ? 'bg-red-500' : 'bg-blue-500'}`}>
+                     <div className={`absolute top-0 right-0 p-0.5 text-[7px] text-white rounded-bl ${tile.owner === 1 ? 'bg-red-500' : 'bg-blue-500'}`}>
                        ${tile.rent}
                      </div>
                   )}
                 </>
               ) : (
-                 <span className="opacity-70">{tile.label}</span>
+                 <span className="opacity-60">{tile.label}</span>
               )}
-
-              {/* 棋子 */}
+              
               <div className="absolute bottom-0 w-full flex justify-center gap-1 pb-0.5">
-                {p1Here && <div className="w-3 h-3 md:w-4 md:h-4 bg-red-500 rounded-full border-2 border-white shadow-md animate-bounce" style={{animationDelay: '0s'}}></div>}
-                {p2Here && <div className="w-3 h-3 md:w-4 md:h-4 bg-blue-500 rounded-full border-2 border-white shadow-md animate-bounce" style={{animationDelay: '0.2s'}}></div>}
+                {p1Here && <div className="w-2 h-2 md:w-3 md:h-3 bg-red-500 rounded-full border border-white shadow-sm z-20"></div>}
+                {p2Here && <div className="w-2 h-2 md:w-3 md:h-3 bg-blue-500 rounded-full border border-white shadow-sm z-20"></div>}
               </div>
             </div>
           );
@@ -483,42 +472,69 @@ export default function IdiomMonopolyPVP() {
     );
   };
 
+  // --- Modal Logic ---
   const Modal = () => {
     if (!modalContent) return null;
-
-    const bg = turn === 1 ? 'bg-red-50' : 'bg-blue-50';
-    const btnBg = turn === 1 ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
-    const borderColor = turn === 1 ? 'border-red-200' : 'border-blue-200';
+    const isRed = turn === 1;
+    const themeColor = isRed ? 'red' : 'blue';
 
     return (
-      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
-        <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border-4 ${borderColor}`}>
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
+        <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-4 border-${themeColor}-200`}>
           
-          {/* 問題模式 */}
+          {/* 踩中對手警告 */}
+          {modalContent === 'duel_alert' && (
+            <div className="p-8 text-center bg-red-50">
+              <ShieldAlert size={64} className="mx-auto text-red-500 mb-4 animate-pulse" />
+              <h3 className="text-2xl font-black text-red-800 mb-2">警報！踩中地雷！</h3>
+              <p className="text-gray-700 mb-6">
+                這裡是 <strong>{players[isRed?2:1].name}</strong> 的地盤。<br/>
+                原定過路費: <span className="font-bold">${currentEvent.rent}</span>
+              </p>
+              
+              <div className="bg-white p-4 rounded-xl border border-red-200 mb-6 text-sm text-left space-y-2">
+                <div className="flex items-center gap-2 text-green-700">
+                  <ShieldCheck size={16}/> 答對：罰款減半 (${Math.floor(currentEvent.rent/2)})
+                </div>
+                <div className="flex items-center gap-2 text-red-700">
+                  <ShieldAlert size={16}/> 答錯：罰款雙倍 (${currentEvent.rent*2})
+                </div>
+              </div>
+
+              <button 
+                onClick={startDuelQuestion}
+                className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-lg"
+              >
+                接受挑戰
+              </button>
+            </div>
+          )}
+
+          {/* 問題界面 */}
           {modalContent === 'question' && (
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <span className={`px-3 py-1 rounded-full text-sm font-bold text-white ${turn === 1 ? 'bg-red-500' : 'bg-blue-500'}`}>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold text-white bg-${themeColor}-500`}>
                   {players[turn].name} 的回合
                 </span>
-                <span className="text-yellow-600 font-bold flex items-center gap-1">
-                  答對即可佔領
+                <span className="text-gray-400 text-xs font-bold">
+                  {currentEvent.mode === 'buy' ? '佔領模式' : '防禦模式'}
                 </span>
               </div>
               
               <div className="mb-6">
-                <p className="text-gray-500 text-sm mb-2">請選出對應意思的成語：</p>
-                <p className="text-lg font-bold text-gray-800 bg-gray-50 p-4 rounded-lg">
+                <p className="text-gray-500 text-xs mb-2">成語意思：</p>
+                <div className="text-lg font-bold text-gray-800 bg-gray-50 p-4 rounded-lg border-l-4 border-indigo-500">
                   {currentEvent.data.meaning}
-                </p>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid gap-3">
                 {currentEvent.options.map((opt, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleAnswer(opt.id)}
-                    className="p-4 rounded-xl border-2 border-gray-100 hover:border-indigo-500 hover:bg-indigo-50 text-left font-bold text-gray-700 transition-all"
+                    className="p-4 rounded-xl border-2 border-gray-100 hover:border-indigo-500 hover:bg-indigo-50 text-left font-bold text-gray-700 active:scale-98 transition-all"
                   >
                     {opt.word}
                   </button>
@@ -527,54 +543,37 @@ export default function IdiomMonopolyPVP() {
             </div>
           )}
 
-          {/* 付租金 */}
-          {modalContent === 'pay_rent' && (
-            <div className="p-8 text-center bg-red-50">
-               <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4 text-red-600">
-                <Coins size={32} />
+          {/* 結果反饋 */}
+          {['correct_buy', 'wrong_buy', 'duel_win', 'duel_lose', 'event'].includes(modalContent) && (
+            <div className="p-8 text-center bg-white">
+              {/* 圖示 */}
+              <div className="mb-4 flex justify-center">
+                {modalContent === 'correct_buy' && <Star size={48} className="text-yellow-400"/>}
+                {modalContent === 'wrong_buy' && <Trophy size={48} className="text-gray-300"/>}
+                {modalContent === 'duel_win' && <ShieldCheck size={48} className="text-green-500"/>}
+                {modalContent === 'duel_lose' && <ShieldAlert size={48} className="text-red-500"/>}
+                {modalContent === 'event' && <Dices size={48} className="text-indigo-500"/>}
               </div>
-              <h3 className="text-2xl font-bold text-red-800 mb-2">哎呀！踩中對手地盤</h3>
-              <p className="text-red-700 mb-6">
-                這裡是 <strong>{players[turn===1?2:1].name}</strong> 的領地。<br/>
-                成語：{currentEvent.data.word}<br/>
-                <span className="font-bold text-lg mt-2 block">支付過路費: ${currentEvent.rent}</span>
-              </p>
-              <button 
-                onClick={() => { setModalContent(null); switchTurn(); }}
-                className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700"
-              >
-                支付並結束回合
-              </button>
-            </div>
-          )}
 
-          {/* 機會/命運/結果通用 */}
-          {['event', 'correct', 'wrong'].includes(modalContent) && (
-            <div className={`p-8 text-center ${modalContent === 'correct' ? 'bg-green-50' : 'bg-white'}`}>
-              <h3 className="text-2xl font-bold mb-4">
-                {modalContent === 'correct' && "回答正確！"}
-                {modalContent === 'wrong' && "回答錯誤"}
+              <h3 className="text-2xl font-bold mb-2 text-gray-800">
+                {modalContent === 'correct_buy' && "佔領成功！"}
+                {modalContent === 'wrong_buy' && "佔領失敗..."}
+                {modalContent === 'duel_win' && "防禦成功！"}
+                {modalContent === 'duel_lose' && "防禦失敗！"}
                 {modalContent === 'event' && currentEvent.title}
               </h3>
-              
-              {modalContent === 'correct' && <p className="mb-6">成功佔領地盤，資產大增！</p>}
-              {modalContent === 'wrong' && (
-                 <div className="mb-6">
-                    <p className="text-gray-500 mb-2">很遺憾，地盤被閒置了。</p>
-                    <p className="text-sm bg-gray-100 p-2 rounded">正確答案：{currentEvent.data.word}</p>
-                 </div>
-              )}
-              {modalContent === 'event' && (
-                <p className="mb-6 text-lg">{currentEvent.text} <br/>
-                  <span className={`font-bold ${currentEvent.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {currentEvent.points > 0 ? '+' : ''}{currentEvent.points} 分
-                  </span>
-                </p>
-              )}
+
+              <p className="text-gray-600 mb-6">
+                 {modalContent === 'duel_win' && `太好了！你只需要支付一半過路費 $${currentEvent.actualRent}。`}
+                 {modalContent === 'duel_lose' && `慘了！罰款加倍至 $${currentEvent.actualRent}！`}
+                 {modalContent === 'wrong_buy' && `正確答案是：${currentEvent.data.word}`}
+                 {modalContent === 'event' && `${currentEvent.text} (${currentEvent.points > 0 ? '+' : ''}${currentEvent.points}分)`}
+                 {modalContent === 'correct_buy' && "獲得地皮及獎勵！"}
+              </p>
 
               <button 
                 onClick={() => { setModalContent(null); switchTurn(); }}
-                className={`w-full py-3 text-white rounded-xl font-bold ${btnBg}`}
+                className={`w-full py-3 bg-${themeColor}-600 text-white rounded-xl font-bold hover:bg-${themeColor}-700`}
               >
                 確定
               </button>
@@ -591,30 +590,26 @@ export default function IdiomMonopolyPVP() {
     const winner = p1Total > p2Total ? 1 : (p2Total > p1Total ? 2 : 0);
 
     return (
-      <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center space-y-6 bg-white rounded-xl shadow-lg">
+      <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center space-y-6 bg-white rounded-xl shadow-lg border-4 border-yellow-200">
         <Crown size={80} className="text-yellow-400 drop-shadow-lg" />
         <h2 className="text-4xl font-black text-indigo-900">對戰結束！</h2>
         
-        <div className="flex gap-6 w-full max-w-lg justify-center mt-4">
-          <div className={`flex-1 p-4 rounded-xl border-4 ${winner === 1 ? 'border-yellow-400 bg-yellow-50 transform scale-110 shadow-xl' : 'border-gray-100 bg-gray-50 opacity-70'}`}>
-            <div className="text-xl font-bold text-red-700 mb-2">玩家 1</div>
-            <div className="text-3xl font-black text-gray-800">${p1Total}</div>
-            <div className="text-xs text-gray-500 mt-1">資產總值</div>
-          </div>
-          <div className={`flex-1 p-4 rounded-xl border-4 ${winner === 2 ? 'border-yellow-400 bg-yellow-50 transform scale-110 shadow-xl' : 'border-gray-100 bg-gray-50 opacity-70'}`}>
-            <div className="text-xl font-bold text-blue-700 mb-2">玩家 2</div>
-            <div className="text-3xl font-black text-gray-800">${p2Total}</div>
-            <div className="text-xs text-gray-500 mt-1">資產總值</div>
-          </div>
+        <div className="flex gap-4 w-full max-w-lg justify-center mt-4">
+          {[1, 2].map(pid => (
+            <div key={pid} className={`flex-1 p-4 rounded-xl border-4 ${winner === pid ? 'border-yellow-400 bg-yellow-50 scale-105' : 'border-gray-100 bg-gray-50'}`}>
+              <div className={`text-xl font-bold ${pid===1?'text-red-700':'text-blue-700'}`}>玩家 {pid}</div>
+              <div className="text-3xl font-black text-gray-800">${pid===1?p1Total:p2Total}</div>
+            </div>
+          ))}
         </div>
 
-        <div className="text-2xl font-bold text-indigo-600 mt-6">
-          {winner === 0 ? "勢均力敵！平手！" : `恭喜 ${players[winner].name} 獲勝！`}
+        <div className="text-2xl font-bold text-indigo-600 mt-6 animate-bounce">
+          {winner === 0 ? "平手！" : `恭喜 ${players[winner].name} 獲勝！`}
         </div>
 
         <button 
           onClick={initGame}
-          className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-indigo-700 transition mt-8"
+          className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-indigo-700 transition"
         >
           再來一局
         </button>
@@ -627,7 +622,7 @@ export default function IdiomMonopolyPVP() {
       <div className="w-full max-w-4xl">
         {gameState === 'menu' && <MenuScreen />}
         {gameState === 'study' && <StudyScreen />}
-        {gameState === 'game' && <div className="space-y-4">{renderBoard()}</div>}
+        {gameState === 'game' && <RenderBoard />}
         {gameState === 'finished' && <FinishedScreen />}
       </div>
       <Modal />
