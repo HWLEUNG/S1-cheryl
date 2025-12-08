@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, RefreshCw, Trophy, HelpCircle, X, CheckCircle, Brain, Volume2, ArrowRight, Star, Lock } from 'lucide-react';
+import { 
+  BookOpen, Brain, Volume2, ArrowRight, Dices, 
+  Trophy, User, Star, AlertCircle, Coins, Crown, Users
+} from 'lucide-react';
 
-// 數據來源：根據用戶上傳的附件整理 (第10至40項)
+// --- 數據源 (第10-40項) ---
 const FULL_DATA = [
   { id: 10, word: "一葉知秋", meaning: "形容從微小的事物便推斷出結果。" },
   { id: 11, word: "一落千丈", meaning: "地位名聲或事物境況急速下滑。" },
@@ -36,224 +39,309 @@ const FULL_DATA = [
   { id: 40, word: "五體投地", meaning: "引申形容對別人十分佩服。" }
 ];
 
-// 遊戲配置
-const PAIRS_PER_GAME = 10; // 每次玩 10 對 (20 張卡)
+const BOARD_SIZE = 20; 
+const TARGET_IDIOMS_COUNT = 10;
+const INITIAL_SCORE = 1500;
+const RENT_MULTIPLIER = 0.5; // 過路費是地價的 50%
 
-export default function IdiomChallengeV2() {
-  const [gameState, setGameState] = useState('menu'); // menu, level1 (study), level2 (game), finished
-  const [sessionData, setSessionData] = useState([]); // 保存當前這一局隨機選出的 10 個成語
-  const [currentStudyIndex, setCurrentStudyIndex] = useState(0);
+// --- 語音功能 ---
+const speak = (text) => {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-HK';
+    utterance.rate = 0.8;
+    const voices = window.speechSynthesis.getVoices();
+    const cantoneseVoice = voices.find(v => v.lang.includes('HK') || v.name.includes('Cantonese'));
+    if (cantoneseVoice) utterance.voice = cantoneseVoice;
+    window.speechSynthesis.speak(utterance);
+  }
+};
+
+export default function IdiomMonopolyPVP() {
+  const [gameState, setGameState] = useState('menu'); 
+  const [sessionIdioms, setSessionIdioms] = useState([]);
+  const [boardTiles, setBoardTiles] = useState([]);
   
-  const [cards, setCards] = useState([]);
-  const [flipped, setFlipped] = useState([]);
-  const [solved, setSolved] = useState([]);
-  const [disabled, setDisabled] = useState(false);
-  const [moves, setMoves] = useState(0);
+  // 溫習模式
+  const [studyIndex, setStudyIndex] = useState(0);
 
-  // 初始化一個新的挑戰循環
-  const initSession = () => {
-    // 1. 隨機選取 10 個成語
-    const shuffledData = [...FULL_DATA].sort(() => 0.5 - Math.random());
-    const selectedIdioms = shuffledData.slice(0, PAIRS_PER_GAME);
-    
-    setSessionData(selectedIdioms);
-    setCurrentStudyIndex(0);
-    
-    // 重置遊戲狀態
-    setSolved([]);
-    setMoves(0);
-    setFlipped([]);
-    
-    // 進入第一關
-    setGameState('level1');
-  };
+  // 雙人遊戲狀態
+  const [turn, setTurn] = useState(1); // 1 = Player 1 (Red), 2 = Player 2 (Blue)
+  const [players, setPlayers] = useState({
+    1: { pos: 0, score: INITIAL_SCORE, name: '玩家 1', color: 'bg-red-500', bg: 'bg-red-50', border: 'border-red-500' },
+    2: { pos: 0, score: INITIAL_SCORE, name: '玩家 2', color: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-500' }
+  });
+  
+  const [diceValue, setDiceValue] = useState(1);
+  const [isMoving, setIsMoving] = useState(false);
+  const [modalContent, setModalContent] = useState(null); 
+  const [currentEvent, setCurrentEvent] = useState(null);
+  const [gameLog, setGameLog] = useState(["遊戲開始！請玩家 1 擲骰子。"]);
 
-  // 進入第二關 (遊戲模式)
-  const startLevel2 = () => {
-    // 使用 sessionData (剛剛溫習過的那 10 個) 建立卡片
-    const gameCards = [];
-    sessionData.forEach(item => {
-      gameCards.push({
-        id: `word-${item.id}`,
-        content: item.word,
-        pairId: item.id,
-        type: 'word',
-        fullData: item
-      });
-      gameCards.push({
-        id: `meaning-${item.id}`,
-        content: item.meaning,
-        pairId: item.id,
-        type: 'meaning',
-        fullData: item
-      });
+  // 添加日誌
+  const addLog = (msg) => setGameLog(prev => [msg, ...prev].slice(0, 3));
+
+  // 初始化
+  const initGame = () => {
+    const shuffled = [...FULL_DATA].sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, TARGET_IDIOMS_COUNT);
+    setSessionIdioms(selected);
+    
+    // 生成地圖
+    const newTiles = Array(BOARD_SIZE).fill(null).map((_, i) => ({ id: i, type: 'empty' }));
+    newTiles[0] = { id: 0, type: 'start', label: '起點' };
+    
+    const availableSlots = Array.from({length: 19}, (_, i) => i + 1).sort(() => 0.5 - Math.random());
+    
+    selected.forEach((idiom, idx) => {
+      const slot = availableSlots[idx];
+      newTiles[slot] = { 
+        id: slot, 
+        type: 'idiom', 
+        data: idiom,
+        price: 400, // 地價
+        rent: 200,  // 過路費
+        owner: null // 1 or 2 or null
+      };
     });
 
-    // 洗牌
-    setCards(gameCards.sort(() => 0.5 - Math.random()));
-    setGameState('level2');
+    const remainingSlots = availableSlots.slice(TARGET_IDIOMS_COUNT);
+    remainingSlots.forEach((slot, idx) => {
+      newTiles[slot] = { 
+        id: slot, 
+        type: idx % 2 === 0 ? 'chance' : 'fate',
+        label: idx % 2 === 0 ? '機會' : '命運'
+      };
+    });
+
+    setBoardTiles(newTiles);
+    setStudyIndex(0);
+    setPlayers({
+      1: { pos: 0, score: INITIAL_SCORE, name: '玩家 1', color: 'bg-red-500', bg: 'bg-red-50', border: 'border-red-500' },
+      2: { pos: 0, score: INITIAL_SCORE, name: '玩家 2', color: 'bg-blue-500', bg: 'bg-blue-50', border: 'border-blue-500' }
+    });
+    setTurn(1);
+    setGameLog(["遊戲開始！請先進行溫習。"]);
+    setGameState('study');
   };
 
-  // 語音朗讀
-  const speak = (text) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'zh-HK';
-      utterance.rate = 0.8;
-      const voices = window.speechSynthesis.getVoices();
-      const cantoneseVoice = voices.find(v => v.lang.includes('HK') || v.name.includes('Cantonese'));
-      if (cantoneseVoice) utterance.voice = cantoneseVoice;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
+  // 擲骰子
+  const rollDice = async () => {
+    if (isMoving || modalContent) return;
+    
+    const roll = Math.floor(Math.random() * 6) + 1;
+    setDiceValue(roll);
+    setIsMoving(true);
 
-  // 處理卡片點擊
-  const handleCardClick = (id) => {
-    if (disabled || flipped.includes(id) || solved.includes(cards.find(c => c.id === id).pairId)) return;
-
-    const newFlipped = [...flipped, id];
-    setFlipped(newFlipped);
-
-    if (newFlipped.length === 2) {
-      setDisabled(true);
-      setMoves(prev => prev + 1);
+    let currentPos = players[turn].pos;
+    for (let i = 0; i < roll; i++) {
+      await new Promise(r => setTimeout(r, 300));
+      currentPos = (currentPos + 1) % BOARD_SIZE;
       
-      const card1 = cards.find(c => c.id === newFlipped[0]);
-      const card2 = cards.find(c => c.id === newFlipped[1]);
+      // 更新位置
+      setPlayers(prev => ({
+        ...prev,
+        [turn]: { ...prev[turn], pos: currentPos }
+      }));
 
-      if (card1.pairId === card2.pairId) {
-        setSolved([...solved, card1.pairId]);
-        setFlipped([]);
-        setDisabled(false);
-      } else {
-        setTimeout(() => {
-          setFlipped([]);
-          setDisabled(false);
-        }, 1200);
+      // 經過起點
+      if (currentPos === 0) {
+        addLog(`${players[turn].name} 經過起點，獎勵 300 分`);
+        setPlayers(prev => ({
+          ...prev,
+          [turn]: { ...prev[turn], score: prev[turn].score + 300, pos: currentPos }
+        }));
       }
     }
+
+    setIsMoving(false);
+    handleTileEvent(currentPos);
   };
 
-  // 檢查是否通關
-  useEffect(() => {
-    if (solved.length === PAIRS_PER_GAME && gameState === 'level2') {
-      setTimeout(() => setGameState('finished'), 800);
-    }
-  }, [solved, gameState]);
+  // 事件處理
+  const handleTileEvent = (pos) => {
+    const tile = boardTiles[pos];
+    const currentPlayer = players[turn];
+    const opponent = turn === 1 ? 2 : 1;
 
-  // --- 畫面組件 ---
+    if (tile.type === 'idiom') {
+      if (tile.owner === null) {
+        // 無主地：答題購買
+        const correctAnswer = tile.data;
+        const distractors = sessionIdioms
+          .filter(i => i.id !== correctAnswer.id)
+          .sort(() => 0.5 - Math.random())
+          .slice(0, 3);
+        const options = [...distractors, correctAnswer].sort(() => 0.5 - Math.random());
+        
+        setCurrentEvent({ ...tile, options, correctId: correctAnswer.id });
+        setModalContent('question');
+
+      } else if (tile.owner !== turn) {
+        // 對手的地：付過路費
+        const rent = tile.rent;
+        addLog(`${currentPlayer.name} 踩中對手地盤！支付 ${rent} 分`);
+        
+        setPlayers(prev => ({
+          ...prev,
+          [turn]: { ...prev[turn], score: Math.max(0, prev[turn].score - rent) },
+          [opponent]: { ...prev[opponent], score: prev[opponent].score + rent }
+        }));
+        
+        setCurrentEvent({ ...tile, rent });
+        setModalContent('pay_rent');
+
+      } else {
+        // 自己的地：幸運
+        addLog(`${currentPlayer.name} 回到自己地盤，休息一下。`);
+        switchTurn();
+      }
+
+    } else if (tile.type === 'chance' || tile.type === 'fate') {
+      const isChance = tile.type === 'chance';
+      const points = isChance ? 200 : -100;
+      const texts = isChance 
+        ? ["偶遇名師指點，學業大進！", "在圖書館撿到筆記。", "同學請你食魚蛋。"]
+        : ["上堂恰眼訓，被老師發現。", "忘記帶書本。", "默書不合格。"];
+      
+      const text = texts[Math.floor(Math.random() * texts.length)];
+      
+      setCurrentEvent({ title: isChance ? "機會" : "命運", text, points });
+      setModalContent('event');
+    } else {
+      // 起點或其他
+      switchTurn();
+    }
+  };
+
+  const handleAnswer = (selectedId) => {
+    if (selectedId === currentEvent.correctId) {
+      // 答對：獲得地皮 + 少量分數
+      const bonus = 100;
+      addLog(`${players[turn].name} 佔領成功！獲得地皮及 ${bonus} 分`);
+      
+      // 更新地皮擁有者
+      setBoardTiles(prev => prev.map(t => 
+        t.id === currentEvent.id ? { ...t, owner: turn } : t
+      ));
+
+      setPlayers(prev => ({
+        ...prev,
+        [turn]: { ...prev[turn], score: prev[turn].score + bonus }
+      }));
+
+      speak("答對了！" + currentEvent.data.word);
+      setModalContent('correct');
+    } else {
+      // 答錯
+      addLog(`${players[turn].name} 挑戰失敗，錯失良機。`);
+      setModalContent('wrong');
+    }
+  };
+
+  const switchTurn = () => {
+    // 檢查是否所有地都有人買了
+    const allOwned = boardTiles.filter(t => t.type === 'idiom').every(t => t.owner !== null);
+    if (allOwned) {
+      setGameState('finished');
+    } else {
+      setTurn(prev => prev === 1 ? 2 : 1);
+    }
+  };
+
+  // 計算總資產
+  const calculateTotal = (playerId) => {
+    const cash = players[playerId].score;
+    const propertyValue = boardTiles
+      .filter(t => t.owner === playerId)
+      .reduce((sum, t) => sum + t.price, 0);
+    return cash + propertyValue;
+  };
+
+  // --- UI Components ---
 
   const MenuScreen = () => (
-    <div className="flex flex-col items-center justify-center min-h-[500px] p-8 bg-white rounded-xl shadow-lg animate-fade-in text-center">
-      <div className="mb-6">
-        <span className="inline-block p-3 bg-indigo-100 rounded-full text-indigo-600 mb-4">
-          <Brain size={48} />
-        </span>
-        <h1 className="text-4xl font-bold text-gray-800 mb-2">成語闖關挑戰</h1>
-        <p className="text-gray-500">中一成語選讀 (No. 10-40)</p>
+    <div className="flex flex-col items-center justify-center min-h-[500px] p-8 space-y-8 bg-white rounded-xl shadow-2xl animate-fade-in border-4 border-indigo-100 text-center">
+      <div className="flex gap-4 mb-4">
+        <div className="bg-red-500 p-4 rounded-full shadow-lg text-white"><User size={40} /></div>
+        <div className="bg-blue-500 p-4 rounded-full shadow-lg text-white"><User size={40} /></div>
+      </div>
+      
+      <div>
+        <h1 className="text-4xl font-black text-indigo-900 tracking-tight mb-2">成語大富翁：雙人對戰</h1>
+        <p className="text-xl text-gray-500 font-medium">誰才是成語大亨？二人同機，即時對決！</p>
       </div>
 
-      <div className="grid gap-6 w-full max-w-md">
-        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3 text-left">
-          <div className="bg-blue-200 p-2 rounded-lg text-blue-700 font-bold shrink-0">1</div>
-          <div>
-            <h3 className="font-bold text-blue-900">第一關：溫習室</h3>
-            <p className="text-sm text-blue-700">隨機抽選 {PAIRS_PER_GAME} 個成語，先聽讀、記解釋。</p>
-          </div>
-        </div>
-        
-        <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-start gap-3 text-left opacity-75">
-          <div className="bg-indigo-200 p-2 rounded-lg text-indigo-700 font-bold shrink-0">2</div>
-          <div>
-            <h3 className="font-bold text-indigo-900">第二關：記憶戰</h3>
-            <p className="text-sm text-indigo-700">運用剛剛溫習的記憶，完成配對挑戰。</p>
-          </div>
-        </div>
-
-        <button 
-          onClick={initSession}
-          className="mt-4 flex items-center justify-center gap-2 px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xl shadow-lg transition-transform hover:scale-105"
-        >
-          開始挑戰 <ArrowRight size={24} />
-        </button>
+      <div className="bg-gray-50 p-6 rounded-xl text-left max-w-md w-full space-y-3">
+        <h3 className="font-bold text-gray-800 flex items-center gap-2"><Star size={18} className="text-yellow-500"/> 對戰規則：</h3>
+        <ul className="list-disc list-inside text-sm text-gray-600 space-y-2">
+          <li>雙人輪流擲骰子移動。</li>
+          <li>走到無人地：<span className="font-bold text-indigo-600">答對題目</span>即可免費佔領！</li>
+          <li>走到對手地：必須<span className="font-bold text-red-600">支付過路費</span>！</li>
+          <li>所有地皮被佔領後，資產（分數+地價）最高者勝。</li>
+        </ul>
       </div>
+
+      <button 
+        onClick={initGame}
+        className="w-full max-w-xs px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xl shadow-xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+      >
+        <Users /> 開始對戰
+      </button>
     </div>
   );
 
-  const Level1Screen = () => {
-    const item = sessionData[currentStudyIndex];
-    
+  const StudyScreen = () => {
+    const item = sessionIdioms[studyIndex];
     return (
-      <div className="flex flex-col h-[600px] bg-white rounded-xl shadow-lg overflow-hidden">
-        {/* 頂部進度條 */}
-        <div className="bg-blue-600 text-white p-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 font-bold">
-            <BookOpen size={20} /> 第一關：鞏固溫習
-          </div>
-          <div className="text-sm bg-blue-500 px-3 py-1 rounded-full">
-            {currentStudyIndex + 1} / {PAIRS_PER_GAME}
-          </div>
+      <div className="flex flex-col h-full bg-white rounded-xl shadow-xl overflow-hidden max-w-2xl mx-auto">
+        <div className="bg-indigo-600 text-white p-4 flex justify-between items-center">
+          <span className="font-bold text-lg flex items-center gap-2"><BookOpen/> 賽前準備 (兩位請一起看)</span>
+          <span className="bg-indigo-800 px-3 py-1 rounded-full text-xs">{studyIndex + 1} / {TARGET_IDIOMS_COUNT}</span>
         </div>
-
-        {/* 內容區 */}
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-8 animate-fade-in">
-          <div className="space-y-4">
-            <div className="text-sm text-gray-400 font-bold tracking-widest">請點擊成語朗讀</div>
-            <button 
-              onClick={() => speak(item.word)}
-              className="relative group cursor-pointer transition-transform active:scale-95"
-            >
-              <h2 className="text-6xl font-black text-gray-800 mb-2 group-hover:text-blue-600 transition-colors">
-                {item.word}
-              </h2>
-              <div className="absolute -right-12 top-1/2 -translate-y-1/2 text-blue-400 opacity-50 group-hover:opacity-100">
-                <Volume2 size={32} />
-              </div>
-            </button>
-          </div>
-
-          <div className="w-12 h-1 bg-gray-200 rounded-full"></div>
-
-          <div className="max-w-lg">
-            <div className="text-2xl text-gray-600 font-medium leading-relaxed">
-              {item.meaning}
+        
+        <div className="flex-1 p-8 flex flex-col items-center justify-center text-center space-y-6">
+          <div className="text-sm text-gray-400">請兩位玩家一起記住這個成語</div>
+          <div 
+            className="group relative cursor-pointer"
+            onClick={() => speak(item.word)}
+          >
+            <div className="text-5xl font-black text-gray-800 mb-2 group-hover:text-indigo-600 transition-colors">
+              {item.word}
+            </div>
+            <div className="absolute top-0 -right-8 text-indigo-400 opacity-50 group-hover:opacity-100 animate-pulse">
+              <Volume2 size={24} />
             </div>
           </div>
+          
+          <div className="text-xl text-gray-600 font-medium leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-100 w-full">
+            {item.meaning}
+          </div>
         </div>
 
-        {/* 底部導航 */}
-        <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+        <div className="p-6 bg-gray-50 flex justify-between">
           <button 
-            onClick={() => setCurrentStudyIndex(prev => Math.max(0, prev - 1))}
-            disabled={currentStudyIndex === 0}
-            className="px-4 py-2 text-gray-400 hover:text-gray-600 font-bold disabled:opacity-30"
+            disabled={studyIndex === 0}
+            onClick={() => setStudyIndex(i => i - 1)}
+            className="px-6 py-2 rounded-lg font-bold text-gray-500 hover:bg-gray-200 disabled:opacity-30 transition"
           >
             上一個
           </button>
-
-          <div className="flex gap-1">
-            {sessionData.map((_, idx) => (
-              <div 
-                key={idx} 
-                className={`w-2 h-2 rounded-full ${idx === currentStudyIndex ? 'bg-blue-500' : 'bg-gray-200'}`} 
-              />
-            ))}
-          </div>
-
-          {currentStudyIndex === PAIRS_PER_GAME - 1 ? (
+          
+          {studyIndex < TARGET_IDIOMS_COUNT - 1 ? (
             <button 
-              onClick={startLevel2}
-              className="flex items-center gap-2 px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold shadow-md animate-pulse"
+              onClick={() => setStudyIndex(i => i + 1)}
+              className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition flex items-center gap-2"
             >
-              進入第二關 <ArrowRight size={20} />
+              下一個 <ArrowRight size={18} />
             </button>
           ) : (
             <button 
-              onClick={() => setCurrentStudyIndex(prev => Math.min(PAIRS_PER_GAME - 1, prev + 1))}
-              className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md"
+              onClick={() => setGameState('game')}
+              className="px-8 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 transition shadow-lg animate-bounce flex items-center gap-2"
             >
-              下一個 <ArrowRight size={20} />
+              準備好了！開始比賽 <Dices size={18} />
             </button>
           )}
         </div>
@@ -261,129 +349,288 @@ export default function IdiomChallengeV2() {
     );
   };
 
-  const Level2Screen = () => (
-    <div className="w-full max-w-4xl mx-auto">
-      {/* 遊戲狀態列 */}
-      <div className="flex flex-wrap gap-4 justify-between items-center mb-4 bg-white p-4 rounded-xl shadow-sm border-b-4 border-indigo-100">
-        <div className="flex items-center gap-2 font-bold text-indigo-800">
-          <div className="bg-indigo-100 p-2 rounded-lg"><Star size={20} /></div>
-          第二關：記憶配對
+  const PlayerStats = ({ pid }) => {
+    const p = players[pid];
+    const isTurn = turn === parseInt(pid);
+    const properties = boardTiles.filter(t => t.owner === parseInt(pid)).length;
+    
+    return (
+      <div className={`
+        flex-1 p-3 rounded-xl border-2 transition-all duration-300
+        ${p.bg} ${p.border} ${isTurn ? 'ring-4 ring-offset-2 ring-yellow-400 shadow-lg scale-105 z-10' : 'opacity-80 scale-95'}
+      `}>
+        <div className="flex items-center justify-between mb-2">
+          <span className={`font-bold ${pid === '1' ? 'text-red-700' : 'text-blue-700'} flex items-center gap-2`}>
+            <User size={18} className={p.color + " text-white rounded-full p-0.5"}/>
+            {p.name}
+          </span>
+          {isTurn && <span className="text-xs font-bold bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full animate-pulse">我的回合</span>}
         </div>
-        
-        <div className="flex gap-6 font-mono font-bold text-gray-600">
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-400 uppercase">進度</span>
-            <span className="text-lg text-indigo-600">{solved.length}/{PAIRS_PER_GAME}</span>
+        <div className="flex justify-between items-end">
+          <div>
+            <div className="text-xs text-gray-500">分數</div>
+            <div className="text-2xl font-black text-gray-800">${p.score}</div>
           </div>
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-400 uppercase">步數</span>
-            <span className="text-lg text-orange-500">{moves}</span>
+          <div className="text-right">
+            <div className="text-xs text-gray-500">地皮</div>
+            <div className="font-bold text-gray-700">{properties} 塊</div>
           </div>
         </div>
-
-        <button onClick={() => setGameState('menu')} className="text-gray-400 hover:text-gray-600">
-          <X size={24} />
-        </button>
       </div>
+    );
+  };
 
-      {/* 卡片網格：改為 5 columns x 4 rows 以容納 20 張卡 */}
-      <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 sm:gap-3 select-none">
-        {cards.map(card => {
-          const isFlipped = flipped.includes(card.id);
-          const isSolved = solved.includes(card.pairId);
-          const showFace = isFlipped || isSolved;
+  const renderBoard = () => {
+    const getGridPos = (index) => {
+      if (index <= 5) return { row: 1, col: index + 1 };
+      if (index <= 9) return { row: index - 4, col: 6 };
+      if (index <= 15) return { row: 6, col: 6 - (index - 10) };
+      return { row: 6 - (index - 15), col: 1 };
+    };
+
+    return (
+      <div className="grid grid-cols-6 grid-rows-6 gap-1 w-full max-w-2xl aspect-square mx-auto bg-slate-100 p-2 rounded-xl shadow-inner border-4 border-slate-200 relative">
+        {/* 中心區域 */}
+        <div className="col-start-2 col-end-6 row-start-2 row-end-6 bg-white rounded-xl shadow-sm flex flex-col p-4 z-10 overflow-hidden">
+          {/* 玩家狀態欄 */}
+          <div className="flex gap-2 mb-4 w-full">
+            <PlayerStats pid="1" />
+            <PlayerStats pid="2" />
+          </div>
+
+          {/* 遊戲訊息 */}
+          <div className="bg-gray-50 rounded-lg p-2 h-16 overflow-hidden mb-4 text-xs md:text-sm text-gray-600 border border-gray-100">
+            {gameLog.map((log, i) => (
+              <div key={i} className={`truncate ${i === 0 ? 'font-bold text-gray-800' : 'opacity-60'}`}>
+                {i === 0 && '>'} {log}
+              </div>
+            ))}
+          </div>
+          
+          {/* 骰子按鈕 */}
+          <div className="flex-1 flex flex-col items-center justify-center">
+             <button 
+              onClick={rollDice}
+              disabled={isMoving || modalContent !== null}
+              className={`
+                relative w-24 h-24 md:w-32 md:h-32 flex items-center justify-center rounded-2xl shadow-xl transition-all
+                ${turn === 1 ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'}
+                ${(isMoving || modalContent) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 cursor-pointer'}
+              `}
+            >
+                {isMoving ? (
+                   <div className="animate-spin text-4xl text-white">🎲</div>
+                ) : (
+                  <div className="text-white text-center">
+                    <Dices size={40} className="mx-auto mb-1" />
+                    <span className="font-bold block text-sm">{players[turn].name}<br/>擲骰子</span>
+                  </div>
+                )}
+             </button>
+             {diceValue > 0 && !isMoving && <div className="mt-2 font-bold text-gray-400">點數: {diceValue}</div>}
+          </div>
+        </div>
+
+        {/* 格子 */}
+        {boardTiles.map((tile, i) => {
+          const pos = getGridPos(i);
+          const p1Here = players[1].pos === i;
+          const p2Here = players[2].pos === i;
+          
+          // 格子樣式
+          let borderClass = "border-gray-300";
+          let bgClass = "bg-white";
+          
+          if (tile.type === 'start') bgClass = "bg-yellow-100";
+          else if (tile.type === 'chance') bgClass = "bg-orange-100";
+          else if (tile.type === 'fate') bgClass = "bg-purple-100";
+          else if (tile.owner === 1) { bgClass = "bg-red-100"; borderClass = "border-red-400"; }
+          else if (tile.owner === 2) { bgClass = "bg-blue-100"; borderClass = "border-blue-400"; }
 
           return (
             <div 
-              key={card.id}
-              onClick={() => handleCardClick(card.id)}
+              key={i}
               className={`
-                relative w-full aspect-[4/5] sm:aspect-[3/4] cursor-pointer perspective-1000 group
-                ${isSolved ? 'opacity-0 pointer-events-none transition-opacity duration-700' : 'opacity-100'}
+                relative flex flex-col items-center justify-center text-center p-0.5 md:p-1 rounded-md border-2 text-[9px] md:text-xs font-bold transition-all
+                ${bgClass} ${borderClass}
               `}
+              style={{ gridRow: pos.row, gridColumn: pos.col }}
             >
-              <div className={`
-                w-full h-full transition-all duration-300 transform-style-3d shadow-sm rounded-lg border-b-4
-                ${showFace ? 'rotate-y-180 bg-white border-indigo-200' : 'bg-gradient-to-br from-indigo-500 to-purple-600 border-indigo-800 hover:brightness-110'}
-              `} style={{ transform: showFace ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
-                
-                {/* 背面 */}
-                <div className="absolute w-full h-full backface-hidden flex items-center justify-center">
-                  <span className="text-white/20 font-bold text-2xl">?</span>
-                </div>
-
-                {/* 正面 */}
-                <div className="absolute w-full h-full backface-hidden rotate-y-180 flex items-center justify-center p-2 text-center overflow-hidden bg-white rounded-lg">
-                  <span className={`
-                    font-bold text-gray-800 leading-snug
-                    ${card.type === 'word' ? 'text-lg sm:text-xl text-indigo-700' : 'text-xs sm:text-sm'}
-                  `}>
-                    {card.content}
+              {tile.type === 'idiom' ? (
+                <>
+                  <span className={tile.owner ? (tile.owner === 1 ? 'text-red-800' : 'text-blue-800') : 'text-gray-600'}>
+                    {tile.data.word}
                   </span>
-                </div>
+                  {tile.owner && (
+                     <div className={`absolute top-0 right-0 p-0.5 text-[8px] text-white rounded-bl ${tile.owner === 1 ? 'bg-red-500' : 'bg-blue-500'}`}>
+                       ${tile.rent}
+                     </div>
+                  )}
+                </>
+              ) : (
+                 <span className="opacity-70">{tile.label}</span>
+              )}
+
+              {/* 棋子 */}
+              <div className="absolute bottom-0 w-full flex justify-center gap-1 pb-0.5">
+                {p1Here && <div className="w-3 h-3 md:w-4 md:h-4 bg-red-500 rounded-full border-2 border-white shadow-md animate-bounce" style={{animationDelay: '0s'}}></div>}
+                {p2Here && <div className="w-3 h-3 md:w-4 md:h-4 bg-blue-500 rounded-full border-2 border-white shadow-md animate-bounce" style={{animationDelay: '0.2s'}}></div>}
               </div>
             </div>
           );
         })}
       </div>
-    </div>
-  );
+    );
+  };
 
-  const ResultScreen = () => (
-    <div className="flex flex-col items-center justify-center min-h-[500px] p-8 space-y-8 bg-white rounded-xl shadow-lg animate-fade-in text-center">
-      <div className="relative">
-        <Trophy size={80} className="text-yellow-400 drop-shadow-lg" />
-        <div className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full animate-bounce">
-          WIN!
-        </div>
-      </div>
-      
-      <div>
-        <h2 className="text-3xl font-black text-gray-800 mb-2">闖關成功！</h2>
-        <p className="text-gray-500">你成功記住了這 {PAIRS_PER_GAME} 個成語</p>
-      </div>
+  const Modal = () => {
+    if (!modalContent) return null;
 
-      <div className="bg-gray-50 rounded-xl p-6 w-full max-w-sm border border-gray-100">
-        <div className="flex justify-between items-center text-sm text-gray-600 mb-4 border-b pb-2">
-          <span>本次成績</span>
-          <span className="font-bold text-indigo-600">{moves} 步</span>
-        </div>
-        <div className="text-left max-h-48 overflow-y-auto custom-scrollbar space-y-2">
-          {sessionData.map((item, i) => (
-            <div key={i} className="flex justify-between text-xs sm:text-sm">
-              <span className="font-bold text-gray-700">{item.word}</span>
-              <span className="text-green-600 flex items-center gap-1"><CheckCircle size={10} /> 已精通</span>
+    const bg = turn === 1 ? 'bg-red-50' : 'bg-blue-50';
+    const btnBg = turn === 1 ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700';
+    const borderColor = turn === 1 ? 'border-red-200' : 'border-blue-200';
+
+    return (
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
+        <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border-4 ${borderColor}`}>
+          
+          {/* 問題模式 */}
+          {modalContent === 'question' && (
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <span className={`px-3 py-1 rounded-full text-sm font-bold text-white ${turn === 1 ? 'bg-red-500' : 'bg-blue-500'}`}>
+                  {players[turn].name} 的回合
+                </span>
+                <span className="text-yellow-600 font-bold flex items-center gap-1">
+                  答對即可佔領
+                </span>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-500 text-sm mb-2">請選出對應意思的成語：</p>
+                <p className="text-lg font-bold text-gray-800 bg-gray-50 p-4 rounded-lg">
+                  {currentEvent.data.meaning}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {currentEvent.options.map((opt, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleAnswer(opt.id)}
+                    className="p-4 rounded-xl border-2 border-gray-100 hover:border-indigo-500 hover:bg-indigo-50 text-left font-bold text-gray-700 transition-all"
+                  >
+                    {opt.word}
+                  </button>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
+
+          {/* 付租金 */}
+          {modalContent === 'pay_rent' && (
+            <div className="p-8 text-center bg-red-50">
+               <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4 text-red-600">
+                <Coins size={32} />
+              </div>
+              <h3 className="text-2xl font-bold text-red-800 mb-2">哎呀！踩中對手地盤</h3>
+              <p className="text-red-700 mb-6">
+                這裡是 <strong>{players[turn===1?2:1].name}</strong> 的領地。<br/>
+                成語：{currentEvent.data.word}<br/>
+                <span className="font-bold text-lg mt-2 block">支付過路費: ${currentEvent.rent}</span>
+              </p>
+              <button 
+                onClick={() => { setModalContent(null); switchTurn(); }}
+                className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700"
+              >
+                支付並結束回合
+              </button>
+            </div>
+          )}
+
+          {/* 機會/命運/結果通用 */}
+          {['event', 'correct', 'wrong'].includes(modalContent) && (
+            <div className={`p-8 text-center ${modalContent === 'correct' ? 'bg-green-50' : 'bg-white'}`}>
+              <h3 className="text-2xl font-bold mb-4">
+                {modalContent === 'correct' && "回答正確！"}
+                {modalContent === 'wrong' && "回答錯誤"}
+                {modalContent === 'event' && currentEvent.title}
+              </h3>
+              
+              {modalContent === 'correct' && <p className="mb-6">成功佔領地盤，資產大增！</p>}
+              {modalContent === 'wrong' && (
+                 <div className="mb-6">
+                    <p className="text-gray-500 mb-2">很遺憾，地盤被閒置了。</p>
+                    <p className="text-sm bg-gray-100 p-2 rounded">正確答案：{currentEvent.data.word}</p>
+                 </div>
+              )}
+              {modalContent === 'event' && (
+                <p className="mb-6 text-lg">{currentEvent.text} <br/>
+                  <span className={`font-bold ${currentEvent.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {currentEvent.points > 0 ? '+' : ''}{currentEvent.points} 分
+                  </span>
+                </p>
+              )}
+
+              <button 
+                onClick={() => { setModalContent(null); switchTurn(); }}
+                className={`w-full py-3 text-white rounded-xl font-bold ${btnBg}`}
+              >
+                確定
+              </button>
+            </div>
+          )}
         </div>
       </div>
+    );
+  };
 
-      <div className="flex gap-4">
+  const FinishedScreen = () => {
+    const p1Total = calculateTotal(1);
+    const p2Total = calculateTotal(2);
+    const winner = p1Total > p2Total ? 1 : (p2Total > p1Total ? 2 : 0);
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center space-y-6 bg-white rounded-xl shadow-lg">
+        <Crown size={80} className="text-yellow-400 drop-shadow-lg" />
+        <h2 className="text-4xl font-black text-indigo-900">對戰結束！</h2>
+        
+        <div className="flex gap-6 w-full max-w-lg justify-center mt-4">
+          <div className={`flex-1 p-4 rounded-xl border-4 ${winner === 1 ? 'border-yellow-400 bg-yellow-50 transform scale-110 shadow-xl' : 'border-gray-100 bg-gray-50 opacity-70'}`}>
+            <div className="text-xl font-bold text-red-700 mb-2">玩家 1</div>
+            <div className="text-3xl font-black text-gray-800">${p1Total}</div>
+            <div className="text-xs text-gray-500 mt-1">資產總值</div>
+          </div>
+          <div className={`flex-1 p-4 rounded-xl border-4 ${winner === 2 ? 'border-yellow-400 bg-yellow-50 transform scale-110 shadow-xl' : 'border-gray-100 bg-gray-50 opacity-70'}`}>
+            <div className="text-xl font-bold text-blue-700 mb-2">玩家 2</div>
+            <div className="text-3xl font-black text-gray-800">${p2Total}</div>
+            <div className="text-xs text-gray-500 mt-1">資產總值</div>
+          </div>
+        </div>
+
+        <div className="text-2xl font-bold text-indigo-600 mt-6">
+          {winner === 0 ? "勢均力敵！平手！" : `恭喜 ${players[winner].name} 獲勝！`}
+        </div>
+
         <button 
-          onClick={() => setGameState('menu')}
-          className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl font-bold transition-colors"
+          onClick={initGame}
+          className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-indigo-700 transition mt-8"
         >
-          回主選單
-        </button>
-        <button 
-          onClick={initSession}
-          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg flex items-center gap-2"
-        >
-          <RefreshCw size={20} />
-          再挑戰 10 題
+          再來一局
         </button>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-slate-100 py-6 px-4 font-sans flex items-center justify-center">
+    <div className="min-h-screen bg-slate-100 py-4 px-2 md:py-8 font-sans flex flex-col items-center">
       <div className="w-full max-w-4xl">
         {gameState === 'menu' && <MenuScreen />}
-        {gameState === 'level1' && <Level1Screen />}
-        {gameState === 'level2' && <Level2Screen />}
-        {gameState === 'finished' && <ResultScreen />}
+        {gameState === 'study' && <StudyScreen />}
+        {gameState === 'game' && <div className="space-y-4">{renderBoard()}</div>}
+        {gameState === 'finished' && <FinishedScreen />}
       </div>
+      <Modal />
     </div>
   );
 }
