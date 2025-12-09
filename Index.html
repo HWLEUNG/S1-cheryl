@@ -114,8 +114,8 @@
 
         const BOARD_SIZE = 28; 
         const TARGET_IDIOMS_COUNT = 20;
-        const INITIAL_SCORE = 5000; // 增加初始資金以應對破產機制
-        const BUILD_COST = 300; // 建屋成本略增
+        const INITIAL_SCORE = 5000; 
+        const BUILD_COST = 300; 
         const MAX_HOUSES = 5;
 
         // 音效
@@ -371,7 +371,8 @@
                         : ["上課發白日夢。", "忘記帶功課。", "測驗不合格。"];
                     
                     const text = texts[Math.floor(Math.random() * texts.length)];
-                    setCurrentEvent({ title: isChance ? "機會" : "命運", text, points });
+                    // 修正：補上 mode: 'event'，避免 handleAnswer 出錯
+                    setCurrentEvent({ title: isChance ? "機會" : "命運", text, points, mode: 'event' });
                     setModalContent('event');
                 } else {
                     switchTurn();
@@ -401,9 +402,10 @@
             };
 
             const handleAnswer = (selectedId) => {
-                const isCorrect = selectedId === currentEvent.data.id;
+                // 修正：移除頂層的 isCorrect 判斷，避免在 'event' 模式下因 data 為 undefined 而報錯
                 
                 if (currentEvent.mode === 'buy') {
+                    const isCorrect = selectedId === currentEvent.data.id;
                     if (isCorrect) {
                         addLog(`${players[turn].name} 買地成功！`);
                         setBoardTiles(prev => prev.map(t => 
@@ -422,6 +424,7 @@
                         setModalContent('wrong_buy');
                     }
                 } else if (currentEvent.mode === 'duel') {
+                    const isCorrect = selectedId === currentEvent.data.id;
                     const opponent = turn === 1 ? 2 : 1;
                     const baseRent = currentEvent.currentRent;
                     let actualRent = 0;
@@ -459,8 +462,6 @@
             };
 
             const switchTurn = () => {
-                // 檢查是否所有地都有主，如果都有主可以選擇結束，或者玩到破產
-                // 破產模式下，除非有人破產，否則繼續
                 setTurn(prev => prev === 1 ? 2 : 1);
             };
 
@@ -621,8 +622,8 @@
                                         <span className="opacity-60">{tile.label}</span>
                                     )}
                                     <div className="absolute bottom-0 w-full flex justify-center gap-1 pb-0.5">
-                                        {p1Here && <div className="w-2 h-2 md:w-3 md:h-3 bg-red-500 rounded-full border border-white shadow-sm z-20"></div>}
-                                        {p2Here && <div className="w-2 h-2 md:w-3 md:h-3 bg-blue-500 rounded-full border border-white shadow-sm z-20"></div>}
+                                        {p1Here && <div className="w-4 h-4 md:w-6 md:h-6 bg-red-500 rounded-full border-2 border-white shadow-md z-20"></div>}
+                                        {p2Here && <div className="w-4 h-4 md:w-6 md:h-6 bg-blue-500 rounded-full border-2 border-white shadow-md z-20"></div>}
                                     </div>
                                 </div>
                             );
