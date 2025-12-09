@@ -16,29 +16,12 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-        /* 自定義動畫與樣式 */
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
         
         body {
             font-family: 'Noto Sans TC', sans-serif;
             background-color: #f1f5f9;
             user-select: none;
-        }
-
-        .perspective-1000 {
-            perspective: 1000px;
-        }
-        
-        .transform-style-3d {
-            transform-style: preserve-3d;
-        }
-        
-        .backface-hidden {
-            backface-visibility: hidden;
-        }
-        
-        .rotate-y-180 {
-            transform: rotateY(180deg);
         }
 
         .animate-fade-in {
@@ -49,14 +32,16 @@
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-
-        /* 隱藏滾動條但保留功能 */
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
+        
+        /* 震動動畫 (破產用) */
+        .animate-shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
         }
-        .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
         }
     </style>
 </head>
@@ -67,25 +52,12 @@
         const { useState, useEffect, useRef } = React;
 
         // --- 內嵌圖示組件 (SVG) ---
-        // 修正：確保 Icon 接收的 path 正確渲染
         const Icon = ({ path, size = 24, className = "", fill = "none" }) => (
-            <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width={size} 
-                height={size} 
-                viewBox="0 0 24 24" 
-                fill={fill} 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                className={className}
-            >
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 {path}
             </svg>
         );
 
-        // 修正：所有多路徑的 SVG 必須用 Fragment (<>...</>) 包裹
         const Icons = {
             BookOpen: (props) => <Icon {...props} path={<><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></>} />,
             Volume2: (props) => <Icon {...props} path={<><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></>} />,
@@ -98,16 +70,14 @@
             Swords: (props) => <Icon {...props} path={<><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></>} />,
             ShieldAlert: (props) => <Icon {...props} path={<><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>} />,
             ShieldCheck: (props) => <Icon {...props} path={<><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></>} />,
-            // 修正 Home 的定義
             Home: (props) => <Icon {...props} fill={props.fill || "none"} path={<><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>} />,
             ArrowUpCircle: (props) => <Icon {...props} path={<><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></>} />,
-            // 修正 Music 的定義
             Music: (props) => <Icon {...props} path={<><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></>} />,
             VolumeX: (props) => <Icon {...props} path={<><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></>} />,
-            Link: (props) => <Icon {...props} path={<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>} />
+            Link: (props) => <Icon {...props} path={<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>} />,
+            Skull: (props) => <Icon {...props} path={<><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></>} />
         };
 
-        // --- 數據源 (包含新增的 example) ---
         const FULL_DATA = [
             { id: 10, word: "一葉知秋", meaning: "形容從微小的事物便推斷出結果。", example: "看到地上的落葉，便知道秋天來了，這就是一葉知秋的道理。" },
             { id: 11, word: "一落千丈", meaning: "地位名聲或事物境況急速下滑。", example: "自從那次醜聞曝光後，他在業界的聲望一落千丈。" },
@@ -144,15 +114,16 @@
 
         const BOARD_SIZE = 28; 
         const TARGET_IDIOMS_COUNT = 20;
-        const INITIAL_SCORE = 3000;
-        const BUILD_COST = 200; 
+        const INITIAL_SCORE = 5000; // 增加初始資金以應對破產機制
+        const BUILD_COST = 300; // 建屋成本略增
+        const MAX_HOUSES = 5;
 
-        // 音效資源
+        // 音效
         const AUDIO_URLS = {
             bgm: "https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3",
             correct: "https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.m4a",
             wrong: "https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.m4a",
-            shatter: "https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.m4a", // 防守失敗
+            shatter: "https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.m4a",
             build: "https://assets.mixkit.co/active_storage/sfx/2004/2004-preview.m4a",
         };
 
@@ -187,14 +158,13 @@
             const [currentEvent, setCurrentEvent] = useState(null);
             const [gameLog, setGameLog] = useState(["遊戲開始！"]);
 
-            // Audio State
             const [isMusicPlaying, setIsMusicPlaying] = useState(false);
             const bgmRef = useRef(null);
 
             useEffect(() => {
                 bgmRef.current = new Audio(AUDIO_URLS.bgm);
                 bgmRef.current.loop = true;
-                bgmRef.current.volume = 0.2; // 背景音樂小聲
+                bgmRef.current.volume = 0.2;
                 return () => {
                     if (bgmRef.current) {
                         bgmRef.current.pause();
@@ -213,6 +183,17 @@
                 }
             }, [isMusicPlaying]);
 
+            // --- 破產檢測 ---
+            useEffect(() => {
+                if (gameState === 'game' || gameState === 'menu') {
+                    if (players[1].score <= 0) {
+                        setGameState('finished');
+                    } else if (players[2].score <= 0) {
+                        setGameState('finished');
+                    }
+                }
+            }, [players, gameState]);
+
             const toggleMusic = () => setIsMusicPlaying(!isMusicPlaying);
             const playSfx = (type) => {
                 const audio = new Audio(AUDIO_URLS[type]);
@@ -226,11 +207,9 @@
                 const selected = shuffled.slice(0, TARGET_IDIOMS_COUNT);
                 setSessionIdioms(selected);
                 
-                // 初始化地圖
                 const newTiles = Array(BOARD_SIZE).fill(null).map((_, i) => ({ id: i, type: 'empty' }));
                 newTiles[0] = { id: 0, type: 'start', label: '起點' };
 
-                // 固定間隔放置特殊格子 (分散機制)
                 const specialIndices = [3, 7, 11, 15, 19, 23, 27];
                 specialIndices.forEach((idx, i) => {
                     newTiles[idx] = {
@@ -306,20 +285,24 @@
                 return [...distractors, correctData].sort(() => 0.5 - Math.random());
             };
 
+            // 房屋倍率計算：0=1x, 1=2x, 2=4x, 3=6x, 4=8x, 5=10x
+            const getRentMultiplier = (houses) => {
+                if (houses === 0) return 1;
+                return houses * 2;
+            };
+
             const calculateChainRent = (centerIndex, ownerId, tiles) => {
                 let totalRent = 0;
                 let connectedCount = 0;
 
                 const getRent = (t) => {
-                    const multiplier = t.houses === 0 ? 1 : (t.houses === 1 ? 2 : 4);
-                    return t.rent * multiplier;
+                    return t.rent * getRentMultiplier(t.houses);
                 };
 
                 const centerTile = tiles[centerIndex];
                 totalRent += getRent(centerTile);
                 connectedCount++;
 
-                // 向前檢查
                 let prev = centerIndex - 1;
                 while (prev > 0) { 
                     const t = tiles[prev];
@@ -332,7 +315,6 @@
                     }
                 }
 
-                // 向後檢查
                 let next = centerIndex + 1;
                 while (next < BOARD_SIZE) {
                     const t = tiles[next];
@@ -352,13 +334,11 @@
                 
                 if (tile.type === 'idiom') {
                     if (tile.owner === null) {
-                        // 買地
                         const options = generateOptions(tile.data);
                         setCurrentEvent({ ...tile, options, mode: 'buy' });
                         setModalContent('question');
 
                     } else if (tile.owner !== turn) {
-                        // 對決 (踩中對手)
                         const { totalRent, connectedCount } = calculateChainRent(pos, tile.owner, boardTiles);
                         setCurrentEvent({ 
                             ...tile, 
@@ -368,8 +348,8 @@
                         });
                         setModalContent('duel_alert');
                     } else {
-                        // 建屋
-                        if (tile.houses < 2) {
+                        // 建屋邏輯：上限 5 間
+                        if (tile.houses < MAX_HOUSES) {
                             if (players[turn].score >= BUILD_COST) {
                                 setCurrentEvent({ ...tile, mode: 'build' });
                                 setModalContent('build_confirm');
@@ -378,14 +358,14 @@
                                 switchTurn();
                             }
                         } else {
-                            addLog("房屋已達最高級別。");
+                            addLog("房屋已達頂級！");
                             switchTurn();
                         }
                     }
 
                 } else if (tile.type === 'chance' || tile.type === 'fate') {
                     const isChance = tile.type === 'chance';
-                    const points = isChance ? 200 : -100;
+                    const points = isChance ? 300 : -200; // 加大數值增加波動
                     const texts = isChance 
                         ? ["撿到成語秘籍！", "老師稱讚你！", "幸運中獎！"]
                         : ["上課發白日夢。", "忘記帶功課。", "測驗不合格。"];
@@ -439,7 +419,7 @@
                     } else {
                         addLog(`${players[turn].name} 買地失敗。`);
                         playSfx('wrong');
-                        setModalContent('wrong_buy'); // 顯示錯誤解釋
+                        setModalContent('wrong_buy');
                     }
                 } else if (currentEvent.mode === 'duel') {
                     const opponent = turn === 1 ? 2 : 1;
@@ -448,14 +428,12 @@
                     let resultType = '';
 
                     if (isCorrect) {
-                        // 答對：支付原價 (100%)
                         actualRent = baseRent;
                         resultType = 'duel_win';
                         speak("防禦成功！");
                         playSfx('correct');
                         addLog(`防禦成功！支付原價 $${actualRent}`);
                     } else {
-                        // 答錯：支付雙倍 (200%)
                         actualRent = baseRent * 2;
                         resultType = 'duel_lose';
                         playSfx('shatter'); 
@@ -464,22 +442,26 @@
 
                     setPlayers(prev => ({
                         ...prev,
-                        [turn]: { ...prev[turn], score: Math.max(0, prev[turn].score - actualRent) },
+                        [turn]: { ...prev[turn], score: prev[turn].score - actualRent },
                         [opponent]: { ...prev[opponent], score: prev[opponent].score + actualRent }
                     }));
 
                     setCurrentEvent(prev => ({ ...prev, actualRent }));
-                    setModalContent(resultType); // 如果答錯，這裡也可以加入解釋，但主要在 wrong_buy 顯示
+                    setModalContent(resultType);
+                } else if (currentEvent.mode === 'event') {
+                    setPlayers(prev => ({
+                        ...prev,
+                        [turn]: { ...prev[turn], score: prev[turn].score + currentEvent.points }
+                    }));
+                    setModalContent(null);
+                    switchTurn();
                 }
             };
 
             const switchTurn = () => {
-                const allOwned = boardTiles.filter(t => t.type === 'idiom').every(t => t.owner !== null);
-                if (allOwned) {
-                    setGameState('finished');
-                } else {
-                    setTurn(prev => prev === 1 ? 2 : 1);
-                }
+                // 檢查是否所有地都有主，如果都有主可以選擇結束，或者玩到破產
+                // 破產模式下，除非有人破產，否則繼續
+                setTurn(prev => prev === 1 ? 2 : 1);
             };
 
             const calculateTotal = (playerId) => {
@@ -505,17 +487,17 @@
                     </div>
                     <div>
                         <h1 className="text-4xl font-black text-indigo-900 tracking-tight mb-2">成語大富翁：終極對決</h1>
-                        <p className="text-xl text-gray-500 font-medium">連鎖地產・雙倍風險・絕對刺激</p>
+                        <p className="text-xl text-gray-500 font-medium">破產殊死戰・五級豪宅・連鎖攻防</p>
                     </div>
                     <div className="bg-orange-50 p-6 rounded-xl text-left max-w-md w-full border border-orange-200">
                         <h3 className="font-bold text-orange-800 flex items-center gap-2 mb-3">
-                            <Icons.Link size={20}/> 遊戲新規則：
+                            <Icons.ShieldAlert size={20}/> 遊戲規則 (v4.0)：
                         </h3>
                         <ul className="list-disc list-inside text-sm text-gray-700 space-y-2 font-medium">
-                            <li><span className="text-indigo-600 font-bold">連鎖計費</span>：相連地盤罰款疊加 (如 150+150)。</li>
-                            <li><span className="text-green-600 font-bold">防禦成功</span> (答對)：支付原價 (100%)。</li>
-                            <li><span className="text-red-600 font-bold">防禦失敗</span> (答錯)：罰雙倍 (200%)！</li>
-                            <li><span className="text-gray-600">答錯回饋</span>：會顯示正確答案與例句解釋。</li>
+                            <li><span className="text-red-600 font-bold">破產即輸</span>：金錢歸零 (&le;0) 立即戰敗。</li>
+                            <li><span className="text-indigo-600 font-bold">五級地產</span>：每間屋加 2 倍租金，最高 10 倍！</li>
+                            <li><span className="text-blue-600 font-bold">連鎖計費</span>：相連地盤租金疊加計算。</li>
+                            <li>防禦失敗罰雙倍，最高可達 <span className="font-bold text-red-600">20倍</span> 租金！</li>
                         </ul>
                     </div>
                     <button 
@@ -544,7 +526,6 @@
                                 <div className="absolute top-0 -right-8 text-indigo-400 opacity-50 group-hover:opacity-100 animate-pulse"><Icons.Volume2 size={24} /></div>
                             </div>
                             <div className="text-xl text-gray-600 font-medium leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-100 w-full">{item.meaning}</div>
-                            {/* 溫習時也顯示例句，增強記憶 */}
                             <div className="text-sm text-gray-500 italic bg-yellow-50 p-4 rounded-lg w-full">例：{item.example}</div>
                         </div>
                         <div className="p-6 bg-gray-50 flex justify-between">
@@ -569,7 +550,6 @@
 
                 return (
                     <div className="grid grid-cols-8 grid-rows-8 gap-1 w-full max-w-3xl aspect-square mx-auto bg-slate-100 p-2 rounded-xl shadow-inner border-4 border-slate-200 relative select-none">
-                        
                         <button 
                             onClick={toggleMusic}
                             className={`absolute top-2 right-2 z-20 p-1.5 rounded-full shadow-md ${isMusicPlaying ? 'bg-white text-indigo-600' : 'bg-gray-200 text-gray-500'} opacity-80 hover:opacity-100`}
@@ -585,7 +565,7 @@
                                             <span>{players[pid].name}</span>
                                             {turn === pid && <span className="text-xs bg-yellow-400 text-yellow-900 px-1 rounded">回合</span>}
                                         </div>
-                                        <div className="text-2xl font-black text-gray-800">${players[pid].score}</div>
+                                        <div className={`text-2xl font-black ${players[pid].score <= 0 ? 'text-red-600 animate-pulse' : 'text-gray-800'}`}>${players[pid].score}</div>
                                         <div className="text-xs text-gray-500 flex items-center gap-1">
                                             地皮: {boardTiles.filter(t=>t.owner===pid).length}
                                         </div>
@@ -623,13 +603,18 @@
                                             <span className={`leading-tight z-10 ${tile.owner ? (tile.owner === 1 ? 'text-red-800' : 'text-blue-800') : 'text-gray-600'}`}>{tile.data.word}</span>
                                             {tile.owner && (
                                                 <div className={`absolute top-0 right-0 p-0.5 text-[7px] text-white rounded-bl ${tile.owner === 1 ? 'bg-red-500' : 'bg-blue-500'}`}>
-                                                    ${tile.rent * (tile.houses === 0 ? 1 : tile.houses === 1 ? 2 : 4)}
+                                                    ${tile.rent * getRentMultiplier(tile.houses)}
                                                 </div>
                                             )}
-                                            <div className="absolute top-0 left-0 flex space-x-0.5 p-0.5">
-                                                {Array.from({length: tile.houses}).map((_, hi) => (
-                                                    <Icons.Home key={hi} size={8} className={tile.owner === 1 ? 'text-red-600 fill-red-600' : 'text-blue-600 fill-blue-600'} />
-                                                ))}
+                                            {/* 房屋顯示區域 (最多5間) */}
+                                            <div className="absolute top-0 left-0 flex flex-wrap w-full p-0.5 gap-[1px]">
+                                                {tile.houses === 5 ? (
+                                                    <div className="w-full text-center"><Icons.Crown size={12} className="inline text-yellow-500 fill-yellow-500" /></div>
+                                                ) : (
+                                                    Array.from({length: tile.houses}).map((_, hi) => (
+                                                        <Icons.Home key={hi} size={6} className={tile.owner === 1 ? 'text-red-600 fill-red-600' : 'text-blue-600 fill-blue-600'} />
+                                                    ))
+                                                )}
                                             </div>
                                         </>
                                     ) : (
@@ -651,7 +636,6 @@
                 const isRed = turn === 1;
                 const themeColor = isRed ? 'red' : 'blue';
 
-                // 共用錯誤解釋組件
                 const WrongExplanation = () => (
                     <div className="mt-4 bg-red-50 p-4 rounded-xl border border-red-200 text-left">
                         <div className="text-red-800 font-bold mb-1 flex items-center gap-2">
@@ -667,7 +651,6 @@
                 return (
                     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
                         <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-4 border-${themeColor}-200`}>
-                            
                             {/* 建屋確認 */}
                             {modalContent === 'build_confirm' && (
                                 <div className="p-8 text-center bg-indigo-50">
@@ -675,13 +658,35 @@
                                     <h3 className="text-2xl font-black text-indigo-900 mb-2">升級地盤？</h3>
                                     <p className="text-gray-700 mb-6">
                                         花費 <span className="font-bold text-red-600">${BUILD_COST}</span> 建造一間房屋？<br/>
-                                        當前房屋: {currentEvent.houses} / 2<br/>
-                                        <span className="text-sm text-gray-500">升級後，敵人踩中懲罰將倍增！</span>
+                                        當前房屋: {currentEvent.houses} / {MAX_HOUSES}<br/>
+                                        <span className="text-sm text-gray-500">每級提升 2 倍租金！</span>
                                     </p>
                                     <div className="flex gap-4">
                                         <button onClick={() => { setModalContent(null); switchTurn(); }} className="flex-1 py-3 bg-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-400">不了</button>
                                         <button onClick={handleBuildConfirm} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg">確認建造</button>
                                     </div>
+                                </div>
+                            )}
+
+                            {/* 機會/命運事件 */}
+                            {modalContent === 'event' && (
+                                <div className="p-8 text-center bg-white">
+                                    <div className="mb-4 flex justify-center">
+                                        <Icons.Dices size={48} className="text-indigo-500"/>
+                                    </div>
+                                    <h3 className="text-2xl font-bold mb-4 text-gray-800">{currentEvent.title}</h3>
+                                    <p className="text-lg text-gray-600 mb-6">
+                                        {currentEvent.text} <br/>
+                                        <span className={`font-bold ${currentEvent.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {currentEvent.points > 0 ? '+' : ''}{currentEvent.points} 分
+                                        </span>
+                                    </p>
+                                    <button 
+                                        onClick={() => handleAnswer(null)} 
+                                        className={`w-full py-3 bg-${themeColor}-600 text-white rounded-xl font-bold hover:bg-${themeColor}-700`}
+                                    >
+                                        確定
+                                    </button>
                                 </div>
                             )}
 
@@ -727,7 +732,6 @@
                                             <button 
                                                 key={idx} 
                                                 onClick={() => handleAnswer(opt.id)} 
-                                                // 無預設顏色
                                                 className="p-4 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-left font-bold text-gray-700 active:scale-98 transition-all"
                                             >
                                                 {opt.word}
@@ -738,30 +742,26 @@
                             )}
 
                             {/* 結果反饋 */}
-                            {['correct_buy', 'wrong_buy', 'duel_win', 'duel_lose', 'event'].includes(modalContent) && (
+                            {['correct_buy', 'wrong_buy', 'duel_win', 'duel_lose'].includes(modalContent) && (
                                 <div className="p-8 text-center bg-white">
                                     <div className="mb-4 flex justify-center">
                                         {modalContent === 'correct_buy' && <Icons.Star size={48} className="text-yellow-400"/>}
                                         {modalContent === 'wrong_buy' && <Icons.Trophy size={48} className="text-gray-300"/>}
                                         {modalContent === 'duel_win' && <Icons.ShieldCheck size={48} className="text-green-500"/>}
                                         {modalContent === 'duel_lose' && <Icons.ShieldAlert size={48} className="text-red-500"/>}
-                                        {modalContent === 'event' && <Icons.Dices size={48} className="text-indigo-500"/>}
                                     </div>
                                     <h3 className="text-2xl font-bold mb-2 text-gray-800">
                                         {modalContent === 'correct_buy' && "佔領成功！"}
                                         {modalContent === 'wrong_buy' && "佔領失敗..."}
                                         {modalContent === 'duel_win' && "防禦成功！"}
                                         {modalContent === 'duel_lose' && "防禦失敗！"}
-                                        {modalContent === 'event' && currentEvent.title}
                                     </h3>
                                     
                                     <div className="text-gray-600 mb-6">
                                         {modalContent === 'duel_win' && `防禦成功！支付原價租金 $${currentEvent.actualRent}。`}
                                         {modalContent === 'duel_lose' && `防禦失敗！你需要支付雙倍租金 $${currentEvent.actualRent}！`}
                                         {modalContent === 'correct_buy' && "獲得地皮及獎勵！"}
-                                        {modalContent === 'event' && `${currentEvent.text} (${currentEvent.points > 0 ? '+' : ''}${currentEvent.points}分)`}
                                         
-                                        {/* 答錯時顯示詳細解釋 */}
                                         {(modalContent === 'wrong_buy' || modalContent === 'duel_lose') && <WrongExplanation />}
                                     </div>
 
@@ -774,22 +774,27 @@
             };
 
             const FinishedScreen = () => {
-                const p1Total = calculateTotal(1);
-                const p2Total = calculateTotal(2);
-                const winner = p1Total > p2Total ? 1 : (p2Total > p1Total ? 2 : 0);
+                const winner = players[1].score <= 0 ? 2 : (players[2].score <= 0 ? 1 : (calculateTotal(1) > calculateTotal(2) ? 1 : 2));
+                const reason = players[1].score <= 0 ? "玩家 1 破產" : (players[2].score <= 0 ? "玩家 2 破產" : "地皮售罄");
+
                 return (
                     <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center space-y-6 bg-white rounded-xl shadow-lg border-4 border-yellow-200">
                         <Icons.Crown size={80} className="text-yellow-400 drop-shadow-lg" />
-                        <h2 className="text-4xl font-black text-indigo-900">對戰結束！</h2>
+                        <h2 className="text-4xl font-black text-indigo-900">遊戲結束！</h2>
+                        <p className="text-xl text-red-500 font-bold">{reason}</p>
+                        
                         <div className="flex gap-4 w-full max-w-lg justify-center mt-4">
                             {[1, 2].map(pid => (
-                                <div key={pid} className={`flex-1 p-4 rounded-xl border-4 ${winner === pid ? 'border-yellow-400 bg-yellow-50 scale-105' : 'border-gray-100 bg-gray-50'}`}>
+                                <div key={pid} className={`flex-1 p-4 rounded-xl border-4 ${winner === pid ? 'border-yellow-400 bg-yellow-50 scale-105' : 'border-gray-100 bg-gray-50 opacity-50'}`}>
                                     <div className={`text-xl font-bold ${pid===1?'text-red-700':'text-blue-700'}`}>玩家 {pid}</div>
-                                    <div className="text-3xl font-black text-gray-800">${pid===1?p1Total:p2Total}</div>
+                                    <div className={`text-3xl font-black ${players[pid].score <= 0 ? 'text-red-500' : 'text-gray-800'}`}>${players[pid].score <= 0 ? 0 : calculateTotal(pid)}</div>
+                                    <div className="text-xs text-gray-500">{players[pid].score <= 0 ? "已破產" : "總資產"}</div>
                                 </div>
                             ))}
                         </div>
-                        <div className="text-2xl font-bold text-indigo-600 mt-6 animate-bounce">{winner === 0 ? "平手！" : `恭喜 ${players[winner].name} 獲勝！`}</div>
+                        <div className="text-2xl font-bold text-indigo-600 mt-6 animate-bounce">
+                            恭喜 {players[winner].name} 獲勝！
+                        </div>
                         <button onClick={initGame} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-indigo-700 transition">再來一局</button>
                     </div>
                 );
